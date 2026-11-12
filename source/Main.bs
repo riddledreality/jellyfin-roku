@@ -23,6 +23,19 @@ sub Main (args as dynamic) as void
     ' Set default background color
     m.scene.backgroundColor = chainLookupReturn(m.global.session, "user.settings.colorBackground", ColorPalette.VIEWBACKGROUND)
 
+    ' Resolve while the OS splash is still up. Only a mapped serial gets a video node.
+    introUri = getIntroUriForThisDevice()
+    deviceIntro = invalid
+    if isValidAndNotEmpty(introUri)
+        deviceIntro = CreateObject("roSGNode", "DeviceIntro")
+        if isValid(deviceIntro)
+            m.scene.appendChild(deviceIntro)
+            deviceIntro.setFocus(true)
+            introOverhang = m.scene.findNode("overhang")
+            if isValid(introOverhang) then introOverhang.visible = false
+        end if
+    end if
+
     m.screen.show() ' vscode_rale_tracker_entry
     'vscode_rdb_on_device_component_entry
 
@@ -45,6 +58,11 @@ sub Main (args as dynamic) as void
     audioMiniPlayer = m.scene.findNode("audioMiniPlayer")
     if isValid(audioMiniPlayer)
         audioMiniPlayer.callFunc("setup")
+    end if
+
+    ' Post-launch intro for mapped TVs only. Sign-out returns to app_start and does not replay it.
+    if isValid(deviceIntro)
+        if playPreparedDeviceIntro(deviceIntro, introUri) then return
     end if
 
     app_start:

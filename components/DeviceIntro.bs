@@ -1,0 +1,58 @@
+import "pkg:/source/enums/KeyCode.bs"
+import "pkg:/source/utils/misc.bs"
+
+sub init()
+    m.done = false
+    m.closing = false
+    m.top.focusable = true
+
+    m.video = m.top.findNode("introVideo")
+    m.video.enableUI = false
+    m.video.enableTrickPlay = false
+    m.video.focusable = false
+    m.video.observeFieldScoped("state", "onIntroState")
+end sub
+
+sub playIntro(uri as string)
+    if m.done then return
+    if not isValidAndNotEmpty(uri)
+        markIntroFinished()
+        return
+    end if
+
+    content = CreateObject("roSGNode", "ContentNode")
+    content.url = uri
+    content.streamFormat = "mp4"
+    m.video.content = content
+    m.video.control = "play"
+    m.top.setFocus(true)
+end sub
+
+sub stopIntro()
+    m.closing = true
+    if isValid(m.video)
+        m.video.unobserveFieldScoped("state")
+        m.video.control = "stop"
+    end if
+end sub
+
+sub onIntroState()
+    if m.closing or m.done then return
+    state = m.video.state
+    if state = "finished" or state = "error"
+        markIntroFinished()
+    end if
+end sub
+
+sub markIntroFinished()
+    if m.done then return
+    m.done = true
+    m.top.finished = true
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if press and (key = KeyCode.BACK or key = KeyCode.OK)
+        markIntroFinished()
+    end if
+    return true
+end function
