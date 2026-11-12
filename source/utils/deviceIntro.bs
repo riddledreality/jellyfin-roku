@@ -1,0 +1,144 @@
+' Per-TV intro videos played after the Roku OS launch splash.
+'
+' The manifest splash is one PNG for the whole package, and the OS shows it
+' before channel code runs, so it cannot change per device. Add another TV by
+' mapping its hardware serial to a pkg:/ MP4. Serials that are not listed keep
+' the stock startup and never play one of these files.
+
+const DEVICE_INTRO_TIMEOUT_MS = 10000
+const ECP_SERIAL_TIMEOUT_MS = 500
+
+function getDeviceIntroMap() as object
+    return {
+        ' Living room: Hisense 6Series-55 / G236X (Home Assistant "Livingroom tv")
+        "X01900G56YTY": "pkg:/images/intros/nerd-cave-theater-living-room.mp4"
+    }
+end function
+
+' pkg:/ URI for this Roku, or an empty string when it should use the stock startup.
+function getIntroUriForThisDevice() as string
+    parsedSerial = ""
+    friendlyName = ""
+    if isValid(m.global) and isValid(m.global.device)
+        if isValid(m.global.device.serial) then parsedSerial = m.global.device.serial
+        if isValid(m.global.device.friendlyName) then friendlyName = m.global.device.friendlyName
+    end if
+
+    uri = lookupIntroUri(parsedSerial)
+    if isValidAndNotEmpty(uri) then return uri
+
+    ' Default Roku names look like "Model - SERIAL".
+    uri = lookupIntroUri(findMappedSerialInText(friendlyName))
+    if isValidAndNotEmpty(uri) then return uri
+
+    ' A default name parses to a 12-character serial. If that serial is not in
+    ' the map, this is another TV: do not query device-info and do not play.
+    ' A renamed set no longer has that serial in the name, so read it from
+    ' local device-info. The TV's IP is not a match key.
+    if isRokuSerial(parsedSerial) then return ""
+    return lookupIntroUri(readSerialFromLocalEcp())
+end function
+
+function isRokuSerial(serial as string) as boolean
+    if not isValidAndNotEmpty(serial) then return false
+    matcher = CreateObject("roRegex", "^[A-Za-z0-9]{12}$", "")
+    found = matcher.Match(serial.Trim())
+    return isValid(found) and found.Count() > 0
+end function
+
+function lookupIntroUri(serial as string) as string
+    if not isValidAndNotEmpty(serial) then return ""
+    uri = getDeviceIntroMap().lookup(serial.Trim())
+    if isValidAndNotEmpty(uri) then return uri
+    return ""
+end function
+
+function findMappedSerialInText(text as string) as string
+    if not isValidAndNotEmpty(text) then return ""
+    upperText = UCase(text)
+    for each serial in getDeviceIntroMap()
+        if Instr(1, upperText, UCase(serial)) > 0 then return serial
+    end for
+    return ""
+end function
+
+function readSerialFromLocalEcp() as string
+    port = CreateObject("roMessagePort")
+    request = CreateObject("roUrlTransfer")
+    request.SetMessagePort(port)
+    request.SetUrl("http://127.0.0.1:8060/query/device-info")
+    if not request.AsyncGetToString() then return ""
+
+    elapsed = CreateObject("roTimespan")
+    elapsed.Mark()
+    while elapsed.TotalMilliseconds() < ECP_SERIAL_TIMEOUT_MS
+        remaining = ECP_SERIAL_TIMEOUT_MS - elapsed.TotalMilliseconds()
+        if remaining < 1 then exit while
+        msg = wait(remaining, port)
+        if msg = invalid then return ""
+        if type(msg) = "roUrlEvent"
+            if msg.GetResponseCode() = 200
+                return serialFromDeviceInfoXml(msg.GetString())
+            end if
+            return ""
+        end if
+    end while
+    return ""
+end function
+
+function serialFromDeviceInfoXml(body as string) as string
+    if not isValidAndNotEmpty(body) then return ""
+
+    root = CreateObject("roXMLElement")
+    if root.Parse(body)
+        elements = root.GetNamedElements("serial-number")
+        if isValid(elements) and elements.Count() > 0
+            serial = elements[0].GetText()
+            if isValidAndNotEmpty(serial) then return serial.Trim()
+        end if
+    end if
+
+    matcher = CreateObject("roRegex", "<serial-number>([^<]+)</serial-number>", "i")
+    found = matcher.Match(body)
+    if isValid(found) and found.Count() >= 2 and isValidAndNotEmpty(found[1])
+        return found[1].Trim()
+    end if
+    return ""
+end function
+
+' Play an intro node that is already on the scene.
+' Returns true when the screen was closed and Main should exit.
+function playPreparedDeviceIntro(intro as object, uri as string) as boolean
+    if not isValid(intro) or not isValidAndNotEmpty(uri) then return false
+    if not isValid(m.scene) or not isValid(m.port) then return false
+
+    intro.observeField("finished", m.port)
+    intro.setFocus(true)
+    intro.callFunc("playIntro", uri)
+
+    screenClosed = false
+    elapsed = CreateObject("roTimespan")
+    elapsed.Mark()
+    while elapsed.TotalMilliseconds() < DEVICE_INTRO_TIMEOUT_MS
+        remaining = DEVICE_INTRO_TIMEOUT_MS - elapsed.TotalMilliseconds()
+        if remaining < 1 then exit while
+        msg = wait(remaining, m.port)
+        if msg = invalid then exit while
+        if type(msg) = "roSGScreenEvent" and msg.isScreenClosed()
+            screenClosed = true
+            exit while
+        end if
+        if isNodeEvent(msg, "finished") then exit while
+    end while
+
+    intro.unobserveField("finished")
+    if screenClosed then return true
+
+    intro.callFunc("stopIntro")
+    m.scene.removeChild(intro)
+
+    overhang = m.scene.findNode("overhang")
+    if isValid(overhang) then overhang.visible = true
+    m.scene.setFocus(true)
+    return false
+end function

@@ -1,15 +1,15 @@
 ## Channel Details
 
-title=jellyfin
+title=Nerd Cave Theater
 major_version=3
 minor_version=2
 build_version=5
 
 ### Main Menu Icons / Channel Poster Artwork
 
-mm_icon_focus_fhd=pkg:/images/channel-poster_fhd_dev.png
-mm_icon_focus_hd=pkg:/images/channel-poster_hd_dev.png
-mm_icon_focus_sd=pkg:/images/channel-poster_sd_dev.png
+mm_icon_focus_fhd=pkg:/images/nerd-cave-theater-icon_fhd.png
+mm_icon_focus_hd=pkg:/images/nerd-cave-theater-icon_hd.png
+mm_icon_focus_sd=pkg:/images/nerd-cave-theater-icon_sd.png
 
 ### Splash Screen + Loading Screen Artwork
 
